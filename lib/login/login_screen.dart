@@ -64,17 +64,56 @@ class _LoginScreenState extends State<LoginScreen>
       }
 
       if (data.event == AuthChangeEvent.signedIn) {
-        await ThemeService.loadUserTheme();
-        await CurrencyService.loadUserCurrency();
-
-        if (!mounted) return;
-
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
-        );
+        await _handleUserAfterLogin();
       }
     });
+  }
+
+  // =====================================================
+  // 🔥 CREATE PROFILE IF NOT EXISTS
+  // =====================================================
+  Future<void> _handleUserAfterLogin() async {
+    final client = Supabase.instance.client;
+    final user = client.auth.currentUser;
+
+    if (user == null) return;
+
+    try {
+      // 🔎 Check if profile exists
+      final existingProfile = await client
+          .from('profiles')
+          .select()
+          .eq('id', user.id)
+          .maybeSingle();
+
+      // 🆕 Create profile if not exists
+      if (existingProfile == null) {
+        await client.from('profiles').insert({
+          'id': user.id,
+          'name':
+              user.userMetadata?['full_name'] ??
+              user.userMetadata?['name'] ??
+              'User',
+          'email': user.email,
+          'currency': 'INR',
+          'theme_mode': 'system',
+          'plan': 'free',
+        });
+      }
+
+      // 🔄 Load user settings
+      await ThemeService.loadUserTheme();
+      await CurrencyService.loadUserCurrency();
+
+      if (!mounted) return;
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+      );
+    } catch (e) {
+      debugPrint("Login setup error: $e");
+    }
   }
 
   @override
@@ -86,6 +125,9 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
+  // =====================================================
+  // 🔵 GOOGLE LOGIN
+  // =====================================================
   Future<void> loginWithGoogle() async {
     await Supabase.instance.client.auth.signInWithOAuth(
       OAuthProvider.google,
@@ -93,6 +135,9 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  // =====================================================
+  // 📧 EMAIL LOGIN
+  // =====================================================
   Future<void> loginWithEmail() async {
     setState(() => isLoading = true);
 
@@ -105,6 +150,8 @@ class _LoginScreenState extends State<LoginScreen>
       if (response.user != null && response.user!.emailConfirmedAt == null) {
         await Supabase.instance.client.auth.signOut();
 
+        if (!mounted) return;
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Please verify your email before logging in."),
@@ -112,6 +159,8 @@ class _LoginScreenState extends State<LoginScreen>
         );
       }
     } catch (e) {
+      if (!mounted) return;
+
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(e.toString())));
@@ -120,12 +169,15 @@ class _LoginScreenState extends State<LoginScreen>
     setState(() => isLoading = false);
   }
 
+  // =====================================================
+  // UI
+  // =====================================================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         children: [
-          // 🌈 Animated Gradient Background
+          // 🌈 Background
           AnimatedContainer(
             duration: const Duration(seconds: 5),
             decoration: const BoxDecoration(
@@ -159,24 +211,12 @@ class _LoginScreenState extends State<LoginScreen>
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // 🔥 Floating Icon
-                        TweenAnimationBuilder(
-                          tween: Tween<double>(begin: -10, end: 10),
-                          duration: const Duration(seconds: 2),
-                          curve: Curves.easeInOut,
-                          builder: (context, value, child) {
-                            return Transform.translate(
-                              offset: Offset(0, value),
-                              child: const Icon(
-                                Icons.subscriptions,
-                                size: 60,
-                                color: Colors.blue,
-                              ),
-                            );
-                          },
+                        const Icon(
+                          Icons.subscriptions,
+                          size: 60,
+                          color: Colors.blue,
                         ),
-
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 20),
 
                         const Text(
                           "Welcome Back",
@@ -188,7 +228,6 @@ class _LoginScreenState extends State<LoginScreen>
 
                         const SizedBox(height: 24),
 
-                        // EMAIL
                         TextField(
                           controller: emailController,
                           decoration: const InputDecoration(
@@ -199,7 +238,6 @@ class _LoginScreenState extends State<LoginScreen>
 
                         const SizedBox(height: 16),
 
-                        // PASSWORD
                         TextField(
                           controller: passwordController,
                           obscureText: obscurePassword,
@@ -236,30 +274,18 @@ class _LoginScreenState extends State<LoginScreen>
                           ),
                         ),
 
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 10),
 
-                        // LOGIN BUTTON
                         SizedBox(
                           width: double.infinity,
                           height: 50,
                           child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              backgroundColor: Colors.blue,
-                            ),
                             onPressed: isLoading ? null : loginWithEmail,
                             child: isLoading
                                 ? const CircularProgressIndicator(
                                     color: Colors.white,
                                   )
-                                : const Text(
-                                    "Login",
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
+                                : const Text("Login"),
                           ),
                         ),
 
